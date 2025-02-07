@@ -134,6 +134,7 @@ def random_defect_type():
 def inject_defect(image, defect_type):
     """Inject a defect into the image and return the bounding box."""
     img = image.copy()
+    mask = np.zeros_like(img[:, :, 0], dtype=np.uint8)  # Initialize the mask (black background)
     h, w = img.shape[:2]
     bounding_box = None
 
@@ -144,8 +145,8 @@ def inject_defect(image, defect_type):
         curve_probability = 0.7  # Probability of having a curve
         if random.random() < curve_probability:
             # Add a very small curve
-            control_x = (start_x + random.randint(-length*2, length*2))  # Slight horizontal offset
-            control_y = (start_y + random.randint(-length*2, length*2))  # Slight vertical offset
+            control_x = (start_x + random.randint(-length * 2, length * 2))  # Slight horizontal offset
+            control_y = (start_y + random.randint(-length * 2, length * 2))  # Slight vertical offset
             end_x = start_x + random.randint(-length, length)  # Randomize the x-coordinate of the end point
             end_y = start_y + random.randint(-length, length)  # Randomize the y-coordinate of the end point
 
@@ -180,10 +181,10 @@ def inject_defect(image, defect_type):
             valid_indices = (0 <= rr_offset) & (rr_offset < h) & (0 <= cc_offset) & (cc_offset < w)
 
             # Apply random normal distribution for each pixel in the scratch
-            if random.random() < 0.5: # scratch is dark
+            if random.random() < 0.5:  # scratch is dark
                 mean_intensity = random.randint(20, 50)
                 std_dev_intensity = random.randint(5, 10)
-            else: # scratch is bright
+            else:  # scratch is bright
                 mean_intensity = random.randint(130, 150)
                 std_dev_intensity = random.randint(5, 10)
             noise = np.random.normal(mean_intensity, std_dev_intensity, size=(len(rr_offset[valid_indices]), 3))
@@ -204,6 +205,8 @@ def inject_defect(image, defect_type):
             # Apply Gaussian blur to smooth the halo
             halo_layer = gaussian(halo_layer, sigma=1.5, channel_axis=-1, truncate=4.0)
             img = cv2.addWeighted(img.astype(np.float32), 1.0, halo_layer, 0.4, 0).astype(np.uint8)
+
+        mask[rr_offset[valid_indices], cc_offset[valid_indices]] = 255
 
         # Define bounding box around the scratch
         bounding_box = [min(continuous_cc), min(continuous_rr), max(continuous_cc), max(continuous_rr)]
@@ -264,6 +267,8 @@ def inject_defect(image, defect_type):
         # Now, apply the generated random color map to the image for the crater region
         img[eroded_mask > 0] = color_map[eroded_mask > 0]
 
+        cv2.fillPoly(mask, [points], 255)
+
         # Define bounding box for the golden bump
         bounding_box = [
             max(0, center_x - radius),
@@ -284,6 +289,9 @@ def inject_defect(image, defect_type):
 
         # Draw the ellipse on the image
         cv2.ellipse(img, (center_x, center_y), axes, angle, 0, 360, color, thickness)
+
+        # Update the mask for the ring area
+        cv2.ellipse(mask, (center_x, center_y), axes, angle, 0, 360, 255, -1)
 
         # Define bounding box for the defect
         bounding_box = [
@@ -324,8 +332,10 @@ def inject_defect(image, defect_type):
         for i in range(len(points) - 1):
             pt1 = points[i]
             pt2 = points[i + 1]
-            color = tuple(map(int, np.clip(np.random.normal(mean_intensity, std_dev_intensity, size=3), 0, 255).astype(np.uint8)))
+            color = tuple(
+                map(int, np.clip(np.random.normal(mean_intensity, std_dev_intensity, size=3), 0, 255).astype(np.uint8)))
             cv2.line(img, pt1, pt2, color, hair_thickness)
+            cv2.line(mask, pt1, pt2, 255, hair_thickness)  # Draw the hairline on the mask
 
         # Define bounding box for the gate-pollution defect
         all_x = [p[0] for p in points]
@@ -350,7 +360,6 @@ def inject_defect(image, defect_type):
         mean_color = random.choice([color_black, color_gray])  # Randomly choose black or gray color
         std_color = random.randint(5, 12)  # Color intensity variability
 
-
         color_map_r = np.clip(np.random.normal(mean_color, std_color, size=(h, w)), 0, 255)
         color_map_g = np.clip(np.random.normal(mean_color, std_color, size=(h, w)), 0, 255)
         color_map_b = np.clip(np.random.normal(mean_color, std_color, size=(h, w)), 0, 255)
@@ -372,6 +381,8 @@ def inject_defect(image, defect_type):
 
             spray_area = np.pi * spray_radius ** 2
             spray_density = int(spray_percentage * spray_area)  # Number of spray dots based on circle area
+
+            cv2.circle(mask, (center_x, center_y), spray_radius, 255, -1)  # Fill contamination in the mask
 
             for _ in range(spray_density):
                 angle = random.uniform(0, 2 * np.pi)
@@ -425,6 +436,9 @@ def inject_defect(image, defect_type):
         # Blend the glow with the original image
         glowing_image = cv2.addWeighted(image, 1.0, glow, 0.8, 0)
 
+        # Update the mask for the glow area
+        cv2.circle(mask, center, radius, 255, -1)  # Mark the glowing area in the mask
+
         img = glowing_image
 
         # Define bounding box for the entire contamination defect
@@ -444,7 +458,7 @@ def inject_defect(image, defect_type):
         bounding_box[2] = min(w, bounding_box[2] + 10)
         bounding_box[3] = min(h, bounding_box[3] + 10)
 
-    return img, bounding_box
+    return img, mask, bounding_box
 
 
 def create_pairs(clean_images, num_images=500):
@@ -453,6 +467,7 @@ def create_pairs(clean_images, num_images=500):
     os.makedirs(f"{OUTPUT_DIR}/images/inspected", exist_ok=True)
     os.makedirs(f"{OUTPUT_DIR}/images/combined", exist_ok=True)
     os.makedirs(f"{OUTPUT_DIR}/images/annotated", exist_ok=True)
+    os.makedirs(f"{OUTPUT_DIR}/images/annotated_mask", exist_ok=True)
 
     os.makedirs(f"{OUTPUT_DIR}/images/train", exist_ok=True)
     os.makedirs(f"{OUTPUT_DIR}/images/val", exist_ok=True)
@@ -461,6 +476,10 @@ def create_pairs(clean_images, num_images=500):
     os.makedirs(f"{OUTPUT_DIR}/labels/train", exist_ok=True)
     os.makedirs(f"{OUTPUT_DIR}/labels/val", exist_ok=True)
     os.makedirs(f"{OUTPUT_DIR}/labels/test", exist_ok=True)
+
+    os.makedirs(f"{OUTPUT_DIR}/masks/train", exist_ok=True)
+    os.makedirs(f"{OUTPUT_DIR}/masks/val", exist_ok=True)
+    os.makedirs(f"{OUTPUT_DIR}/masks/test", exist_ok=True)
 
     for i in tqdm(range(num_images)):
         clean_image = random.choice(clean_images)
@@ -480,10 +499,11 @@ def create_pairs(clean_images, num_images=500):
         inspected_image = augment_image(inspected_image, image_type='inspected')
 
         bounding_boxes = []
+        mask = np.zeros_like(inspected_image[:, :, 0])
 
         for _ in range(defect_count):
             cls_num, defect_type = random_defect_type()
-            inspected_image, bbox = inject_defect(inspected_image, defect_type)
+            inspected_image, defect_mask, bbox = inject_defect(inspected_image, defect_type)
             if bbox:
                 bounding_boxes.append([cls_num,
                                        (bbox[0] + bbox[2]) / 2 / IMAGE_SIZE[1],
@@ -491,10 +511,11 @@ def create_pairs(clean_images, num_images=500):
                                        abs((bbox[2] - bbox[0]) / IMAGE_SIZE[1]),
                                        abs((bbox[3] - bbox[1]) / IMAGE_SIZE[0])
                                        ])
+                mask[defect_mask == 255] = cls_num + 1
 
-        # shrink the resize
-        clean_image = cv2.resize(clean_image, (int(IMAGE_SIZE[1]*0.75), int(IMAGE_SIZE[0]*0.75)))
-        inspected_image = cv2.resize(inspected_image, (int(IMAGE_SIZE[1]*0.75), int(IMAGE_SIZE[0]*0.75)))
+        # shrink and resize
+        clean_image = cv2.resize(clean_image, (int(IMAGE_SIZE[1] * 0.75), int(IMAGE_SIZE[0] * 0.75)))
+        inspected_image = cv2.resize(inspected_image, (int(IMAGE_SIZE[1] * 0.75), int(IMAGE_SIZE[0] * 0.75)))
 
         clean_image = cv2.resize(clean_image, IMAGE_SIZE)
         inspected_image = cv2.resize(inspected_image, IMAGE_SIZE)
@@ -524,6 +545,15 @@ def create_pairs(clean_images, num_images=500):
             for bbox in bounding_boxes:
                 f.write(" ".join(map(str, bbox)) + "\n")
 
+        # Save mask
+        mask_path = f"{OUTPUT_DIR}/masks/{train_or_val_or_test}/mask_{i}.png"
+        cv2.imwrite(mask_path, mask)
+
+        # save annotated mask<255 and make it 3 channels
+        annotated_mask = mask.copy()
+        annotated_mask[annotated_mask > 0] = 255
+        annotated_mask = np.stack([annotated_mask, annotated_mask, annotated_mask], axis=-1)
+
         # Create a copy of the inspected image for annotation
         annotated_image = inspected_image.copy()
 
@@ -537,6 +567,7 @@ def create_pairs(clean_images, num_images=500):
 
             # Draw rectangle (bounding box)
             cv2.rectangle(annotated_image, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
+            cv2.rectangle(annotated_mask, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
 
             # Add label text above the bounding box
             label = f"Defect {cls_num}"
@@ -550,9 +581,23 @@ def create_pairs(clean_images, num_images=500):
                 1
             )
 
+            cv2.putText(
+                annotated_mask,
+                label,
+                (x_min, y_min - 10),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (0, 255, 0),
+                1
+            )
+
         # Save annotated image
         annotated_path = f"{OUTPUT_DIR}/images/annotated/annotated_{i:04d}.png"
         cv2.imwrite(annotated_path, annotated_image)
+
+        # Save annotated mask
+        annotated_mask_path = f"{OUTPUT_DIR}/images/annotated_mask/annotated_mask_{i:04d}.png"
+        cv2.imwrite(annotated_mask_path, annotated_mask)
 
 
 if __name__ == "__main__":
