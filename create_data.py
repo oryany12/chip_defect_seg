@@ -10,7 +10,7 @@ from skimage.filters import gaussian
 from tqdm import tqdm
 
 # Parameters
-NUM_IMAGES = 5000  # Number of images to generate per clean chip
+NUM_IMAGES = 1000  # Number of images to generate per clean chip
 IMAGE_SIZE = (640, 640)  # Resize images to a standard size
 
 # Defect probabilities
@@ -190,6 +190,7 @@ def inject_defect(image, defect_type):
             noise = np.clip(noise, 0, 255).astype(np.uint8)
 
             img[rr_offset[valid_indices], cc_offset[valid_indices]] = np.clip(noise, 0, 255).astype(np.uint8)
+            mask[rr_offset[valid_indices], cc_offset[valid_indices]] = 255  # White scratch
 
         # Add bright halo effect with a probability
         if random.random() < 0.5:  # 50% chance of having a halo
@@ -204,8 +205,8 @@ def inject_defect(image, defect_type):
             # Apply Gaussian blur to smooth the halo
             halo_layer = gaussian(halo_layer, sigma=1.5, channel_axis=-1, truncate=4.0)
             img = cv2.addWeighted(img.astype(np.float32), 1.0, halo_layer, 0.4, 0).astype(np.uint8)
+            mask[np.sum(halo_layer, axis=-1) > 0] = 255  # Update the mask with the halo
 
-        mask[rr_offset[valid_indices], cc_offset[valid_indices]] = 255
 
         # Define bounding box around the scratch
         bounding_box = [min(continuous_cc), min(continuous_rr), max(continuous_cc), max(continuous_rr)]
@@ -474,8 +475,13 @@ def convert_masks_to_label(masks_lst):
 
     for cls_num, mask in masks_lst:
         # get the points of the object
-        points = np.argwhere(mask == 255)
+        points = np.argwhere(mask > 0)
 
+        # plot mask with plt.plot() and not with plt.imshow() because imshow() will normalize the mask
+
+        import matplotlib.pyplot as plt
+        plt.plot(mask)
+        plt.show()
         # normalize the points by h, w
         h, w = mask.shape
         points = points / [h, w]
@@ -542,7 +548,7 @@ def create_pairs(clean_images, task, num_images=500):
                                        abs((bbox[2] - bbox[0]) / IMAGE_SIZE[1]),
                                        abs((bbox[3] - bbox[1]) / IMAGE_SIZE[0])
                                        ])
-                mask[defect_mask == 255] = cls_num
+                mask[defect_mask == 255] = cls_num + 1
                 defect_mask_lst.append((cls_num, defect_mask))
 
         # shrink and resize
@@ -563,9 +569,10 @@ def create_pairs(clean_images, task, num_images=500):
         # train or val or test
         train_or_val_or_test = 'train' if random.random() < 0.7 else 'val' if random.random() < 0.5 else 'test'
 
-        # Save combined image
-        # switch the images
-        if random.random() < 0.5:
+        # Save train image
+        # switch the inspected with reference image
+        switch_prob = 0.0
+        if random.random() < switch_prob:
             clean_image, inspected_image = inspected_image, clean_image
         combined_image = preprocess_images(Image.fromarray(clean_image), Image.fromarray(inspected_image))
         combined_path = f"{OUTPUT_DIR}/images/{train_or_val_or_test}/image_{i}.png"
