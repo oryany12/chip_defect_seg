@@ -10,7 +10,7 @@ from skimage.filters import gaussian
 from tqdm import tqdm
 
 # Parameters
-NUM_IMAGES = 1000  # Number of images to generate per clean chip
+NUM_IMAGES = 5000  # Number of images to generate per clean chip
 IMAGE_SIZE = (640, 640)  # Resize images to a standard size
 
 # Defect probabilities
@@ -466,7 +466,7 @@ def convert_masks_to_label(masks_lst):
     each line in the txt file is in the format:
     class_number x0 y0 x1 y1 ... xn yn
     where x0, y0, x1, y1, ... xn, yn are the points of the segmentation of the object
-    :param mask:
+    :param masks_lst:
     :return: list of touples, each touple is (class_number, [list of points])
     list of points format: [x0, y0, x1, y1, ... xn, yn] and they ara normalized by the image size
     """
@@ -477,14 +477,11 @@ def convert_masks_to_label(masks_lst):
         # get the points of the object
         points = np.argwhere(mask > 0)
 
-        # plot mask with plt.plot() and not with plt.imshow() because imshow() will normalize the mask
-
-        import matplotlib.pyplot as plt
-        plt.plot(mask)
-        plt.show()
         # normalize the points by h, w
         h, w = mask.shape
         points = points / [h, w]
+        # replace x, y with y, x
+        points = points[:, [1, 0]]
 
         # keep only 3 decimal points
         points = np.round(points, 3)
