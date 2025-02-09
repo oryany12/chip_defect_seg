@@ -459,9 +459,9 @@ def inject_defect(image, defect_type):
 
     return img, mask, bounding_box
 
-def convert_mask_to_label(mask):
+def convert_masks_to_label(masks_lst):
     """
-    Convert mask (image_size, image_size) to label in txt file
+    Convert mask list (image_size, image_size) to label in txt file
     each line in the txt file is in the format:
     class_number x0 y0 x1 y1 ... xn yn
     where x0, y0, x1, y1, ... xn, yn are the points of the segmentation of the object
@@ -469,34 +469,33 @@ def convert_mask_to_label(mask):
     :return: list of touples, each touple is (class_number, [list of points])
     list of points format: [x0, y0, x1, y1, ... xn, yn] and they ara normalized by the image size
     """
-
-    # get the unique values in the mask
-    unique_values = np.unique(mask)
-    unique_values = unique_values[unique_values != 0]
-
     # list of touples, each touple is (class_number, [list of points])
     labels = []
 
-    for value in unique_values:
+    for cls_num, mask in masks_lst:
         # get the points of the object
-        points = np.argwhere(mask == value)
+        points = np.argwhere(mask == 255)
 
         # normalize the points by h, w
         h, w = mask.shape
         points = points / [h, w]
 
+        # keep only 3 decimal points
+        points = np.round(points, 3)
+        # keep only unique points
+        points = np.unique(points, axis=0)
+
         points = points.flatten().tolist()
 
-        labels.append((value, points))
+        labels.append((cls_num, points))
 
     return labels
 
 
 def create_pairs(clean_images, task, num_images=500):
     """Create synthetic dataset pairs."""
-    os.makedirs(f"{OUTPUT_DIR}/images/reference", exist_ok=True)
-    os.makedirs(f"{OUTPUT_DIR}/images/inspected", exist_ok=True)
-    os.makedirs(f"{OUTPUT_DIR}/images/combined", exist_ok=True)
+    # os.makedirs(f"{OUTPUT_DIR}/images/reference", exist_ok=True)
+    # os.makedirs(f"{OUTPUT_DIR}/images/inspected", exist_ok=True)
     os.makedirs(f"{OUTPUT_DIR}/images/annotated", exist_ok=True)
     os.makedirs(f"{OUTPUT_DIR}/images/annotated_mask", exist_ok=True)
 
@@ -531,6 +530,7 @@ def create_pairs(clean_images, task, num_images=500):
 
         bounding_boxes = []
         mask = np.zeros_like(inspected_image[:, :, 0])
+        defect_mask_lst = []
 
         for _ in range(defect_count):
             cls_num, defect_type = random_defect_type()
@@ -543,6 +543,7 @@ def create_pairs(clean_images, task, num_images=500):
                                        abs((bbox[3] - bbox[1]) / IMAGE_SIZE[0])
                                        ])
                 mask[defect_mask == 255] = cls_num
+                defect_mask_lst.append((cls_num, defect_mask))
 
         # shrink and resize
         clean_image = cv2.resize(clean_image, (int(IMAGE_SIZE[1] * 0.75), int(IMAGE_SIZE[0] * 0.75)))
@@ -552,12 +553,12 @@ def create_pairs(clean_images, task, num_images=500):
         inspected_image = cv2.resize(inspected_image, IMAGE_SIZE)
 
         # Save reference image
-        ref_path = f"{OUTPUT_DIR}/images/reference/ref_{i:04d}.png"
-        cv2.imwrite(ref_path, clean_image)
+        # ref_path = f"{OUTPUT_DIR}/images/reference/ref_{i:04d}.png"
+        # cv2.imwrite(ref_path, clean_image)
 
         # Save inspected image
-        insp_path = f"{OUTPUT_DIR}/images/inspected/insp_{i:04d}.png"
-        cv2.imwrite(insp_path, inspected_image)
+        # insp_path = f"{OUTPUT_DIR}/images/inspected/insp_{i:04d}.png"
+        # cv2.imwrite(insp_path, inspected_image)
 
         # train or val or test
         train_or_val_or_test = 'train' if random.random() < 0.7 else 'val' if random.random() < 0.5 else 'test'
@@ -577,7 +578,7 @@ def create_pairs(clean_images, task, num_images=500):
                     f.write(" ".join(map(str, bbox)) + "\n")
 
         elif task == "segmentation":
-            labels_from_mask = convert_mask_to_label(mask)
+            labels_from_mask = convert_masks_to_label(defect_mask_lst)
             with open(label_path, "w") as f:
                 for label, points in labels_from_mask:
                     f.write(f"{label} {' '.join(map(str, points))}\n")
