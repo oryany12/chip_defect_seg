@@ -19,4 +19,5 @@ def train_yolo(model_name, data_path):
 if __name__ == "__main__":
     model_name = 'yolov5s.pt'  # 'yolov5s.pt' or 'yolov8s-seg.pt'
     data_path = "/sise/home/oryanyeh/muze.ai/synthetic_dataset/data.yaml"
-    train_yolo()
+
+    train_yolo(model_name, data_path)
