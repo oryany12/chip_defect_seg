@@ -11,7 +11,6 @@ from tqdm import tqdm
 
 # Parameters
 NUM_IMAGES = 5000  # Number of images to generate per clean chip
-OUTPUT_DIR = "synthetic_dataset"
 IMAGE_SIZE = (640, 640)  # Resize images to a standard size
 
 # Defect probabilities
@@ -460,8 +459,40 @@ def inject_defect(image, defect_type):
 
     return img, mask, bounding_box
 
+def convert_mask_to_label(mask):
+    """
+    Convert mask (image_size, image_size) to label in txt file
+    each line in the txt file is in the format:
+    class_number x0 y0 x1 y1 ... xn yn
+    where x0, y0, x1, y1, ... xn, yn are the points of the segmentation of the object
+    :param mask:
+    :return: list of touples, each touple is (class_number, [list of points])
+    list of points format: [x0, y0, x1, y1, ... xn, yn] and they ara normalized by the image size
+    """
 
-def create_pairs(clean_images, num_images=500):
+    # get the unique values in the mask
+    unique_values = np.unique(mask)
+    unique_values = unique_values[unique_values != 0]
+
+    # list of touples, each touple is (class_number, [list of points])
+    labels = []
+
+    for value in unique_values:
+        # get the points of the object
+        points = np.argwhere(mask == value)
+
+        # normalize the points by h, w
+        h, w = mask.shape
+        points = points / [h, w]
+
+        points = points.flatten().tolist()
+
+        labels.append((value, points))
+
+    return labels
+
+
+def create_pairs(clean_images, task, num_images=500):
     """Create synthetic dataset pairs."""
     os.makedirs(f"{OUTPUT_DIR}/images/reference", exist_ok=True)
     os.makedirs(f"{OUTPUT_DIR}/images/inspected", exist_ok=True)
@@ -511,7 +542,7 @@ def create_pairs(clean_images, num_images=500):
                                        abs((bbox[2] - bbox[0]) / IMAGE_SIZE[1]),
                                        abs((bbox[3] - bbox[1]) / IMAGE_SIZE[0])
                                        ])
-                mask[defect_mask == 255] = cls_num + 1
+                mask[defect_mask == 255] = cls_num
 
         # shrink and resize
         clean_image = cv2.resize(clean_image, (int(IMAGE_SIZE[1] * 0.75), int(IMAGE_SIZE[0] * 0.75)))
@@ -539,15 +570,20 @@ def create_pairs(clean_images, num_images=500):
         combined_path = f"{OUTPUT_DIR}/images/{train_or_val_or_test}/image_{i}.png"
         cv2.imwrite(combined_path, combined_image)
 
-        # Save bounding boxes
         label_path = f"{OUTPUT_DIR}/labels/{train_or_val_or_test}/image_{i}.txt"
-        with open(label_path, "w") as f:
-            for bbox in bounding_boxes:
-                f.write(" ".join(map(str, bbox)) + "\n")
+        if task == "defect_detection":
+            with open(label_path, "w") as f:
+                for bbox in bounding_boxes:
+                    f.write(" ".join(map(str, bbox)) + "\n")
 
-        # Save mask
-        mask_path = f"{OUTPUT_DIR}/masks/{train_or_val_or_test}/mask_{i}.png"
-        cv2.imwrite(mask_path, mask)
+        elif task == "segmentation":
+            labels_from_mask = convert_mask_to_label(mask)
+            with open(label_path, "w") as f:
+                for label, points in labels_from_mask:
+                    f.write(f"{label} {' '.join(map(str, points))}\n")
+
+            mask_path = f"{OUTPUT_DIR}/masks/{train_or_val_or_test}/mask_{i}.png"
+            cv2.imwrite(mask_path, mask)
 
         # save annotated mask<255 and make it 3 channels
         annotated_mask = mask.copy()
@@ -601,6 +637,12 @@ def create_pairs(clean_images, num_images=500):
 
 
 if __name__ == "__main__":
+    # task
+    task = "segmentation"  # detection or segmentation
+
+    # Output directory
+    OUTPUT_DIR = f"synthetic_dataset_{task}"
+
     # Load clean chip images
     clean_image_paths = ["data/defective_examples/case1_reference_image.tif",
                          "data/defective_examples/case2_reference_image.tif",
@@ -608,4 +650,4 @@ if __name__ == "__main__":
     clean_images = [cv2.imread(p) for p in clean_image_paths]
 
     # Create synthetic dataset
-    create_pairs(clean_images, num_images=NUM_IMAGES)
+    create_pairs(clean_images, task, num_images=NUM_IMAGES)

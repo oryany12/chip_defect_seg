@@ -37,8 +37,8 @@ if __name__ == "__main__":
         ("data/defective_examples/case1_reference_image.tif", "data/defective_examples/case1_inspected_image.tif"),
         ("data/defective_examples/case2_reference_image.tif", "data/defective_examples/case2_inspected_image.tif"),
         ("data/non_defective_examples/case3_reference_image.tif", "data/non_defective_examples/case3_inspected_image.tif"),
-        ("data/other_dataset_exmple_reference.png", "data/other_dataset_exmple_inspected_1.png"),
-        ("data/other_dataset_exmple_reference.png", "data/other_dataset_exmple_inspected_2.png")
+        # ("data/other_dataset_exmple_reference.png", "data/other_dataset_exmple_inspected_1.png"),
+        # ("data/other_dataset_exmple_reference.png", "data/other_dataset_exmple_inspected_2.png")
         ]
 
     # samples from training data
@@ -53,7 +53,7 @@ if __name__ == "__main__":
     os.makedirs(save_dir, exist_ok=True)  # Create the directory if it doesn't exist
 
     # Load the trained model
-    model_weights = "/sise/home/oryanyeh/muze.ai/runs/detect/train6/weights/best.pt"
+    model_weights = "/sise/home/oryanyeh/muze.ai/runs/detect/train7/weights/best.pt"
     model = YOLO(model_weights)  # Use your trained model's weight file (best.pt)
 
     for reference_image_path, inspected_image_path in tqdm(pairs_image_paths):

@@ -1,11 +1,11 @@
 from ultralytics import YOLO
 
-def train_yolov5():
-    model = YOLO('yolov5s.pt')  # Load the pre-trained YOLOv5 model
+def train_yolo(model_name, data_path):
+    model = YOLO(model_name)  # Load the pre-trained YOLOv5 model
 
     # Training the model with custom parameters
     model.train(
-        data="/sise/home/oryanyeh/muze.ai/synthetic_dataset/data.yaml",        # Path to your data.yaml
+        data=data_path,        # Path to your data.yaml
         epochs=100,              # Set number of epochs
         batch=16,           # Set batch size
         imgsz=640,               # Image size
@@ -17,4 +17,6 @@ def train_yolov5():
     )
 
 if __name__ == "__main__":
-    train_yolov5()
+    model_name = 'yolov5s.pt'  # 'yolov5s.pt' or 'yolov8s-seg.pt'
+    data_path = "/sise/home/oryanyeh/muze.ai/synthetic_dataset/data.yaml"
+    train_yolo()
