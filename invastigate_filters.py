@@ -6,10 +6,10 @@ import numpy as np
 # Function to load and preprocess images
 def load_and_preprocess_images(img1, img2):
     # Load images if its paths:
-    if isinstance(image1_path, str):
-        img1 = cv2.imread(image1_path)
-    if isinstance(image2_path, str):
-        img2 = cv2.imread(image2_path)
+    if isinstance(img1, str):
+        img1 = cv2.imread(img1)
+    if isinstance(img2, str):
+        img2 = cv2.imread(img2)
 
     # Resize image2 to match the dimensions of image1
     img2 = cv2.resize(img2, (img1.shape[1], img1.shape[0]))

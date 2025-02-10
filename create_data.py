@@ -9,25 +9,6 @@ from skimage.exposure import adjust_gamma
 from skimage.filters import gaussian
 from tqdm import tqdm
 
-# Parameters
-NUM_IMAGES = 5000  # Number of images to generate per clean chip
-IMAGE_SIZE = (640, 640)  # Resize images to a standard size
-
-# Defect probabilities
-defect_probabilities = {
-    0: 0.20,
-    1: 0.40,
-    2: 0.25,
-    3: 0.15
-}
-
-# defect_probabilities = {
-#     0: 0.0,
-#     1: 0.0,
-#     2: 0.0,
-#     3: 1.0
-# }
-
 
 def preprocess_images(ref_image, insp_image):
     ref_gray = np.mean(np.array(ref_image), axis=-1, keepdims=True).astype(np.uint8)  # Convert to grayscale
@@ -56,15 +37,15 @@ def augment_image(image, task, image_type='reference'):
         if task != "old_fashioned":
             flip_prob = 0
             angle = random.randint(-3, 3)
-            shift_x = random.randint(-int(0.10 * w), int(0.10 * w))
-            shift_y = random.randint(-int(0.10 * h), int(0.10 * h))
+            shift_x = random.randint(-int(0.05 * w), int(0.05 * w))
+            shift_y = random.randint(-int(0.05 * h), int(0.05 * h))
             center_x, center_y = w // 2 + shift_x, h // 2 + shift_y
             zoom_factor = random.uniform(1.0, 1.10)
         else:
             flip_prob = 0
             angle = random.randint(-1, 1)
-            shift_x = random.randint(-int(0.05 * w), int(0.05 * w))
-            shift_y = random.randint(-int(0.05 * h), int(0.05 * h))
+            shift_x = random.randint(-int(0.03 * w), int(0.03 * w))
+            shift_y = random.randint(-int(0.03 * h), int(0.03 * h))
             center_x, center_y = w // 2 + shift_x, h // 2 + shift_y
             zoom_factor = random.uniform(1.0, 1.0)
 
@@ -72,7 +53,7 @@ def augment_image(image, task, image_type='reference'):
         raise ValueError("Invalid image type! Choose 'reference' or 'inspected'.")
 
     # Flip
-    if random.random() > 1 - flip_prob:
+    if random.random() < flip_prob:
         image = cv2.flip(image, 1)
 
     # Apply translation (shifting the center of the image)
@@ -214,7 +195,6 @@ def inject_defect(image, defect_type):
             halo_layer = gaussian(halo_layer, sigma=1.5, channel_axis=-1, truncate=4.0)
             img = cv2.addWeighted(img.astype(np.float32), 1.0, halo_layer, 0.4, 0).astype(np.uint8)
             mask[np.sum(halo_layer, axis=-1) > 0] = 255  # Update the mask with the halo
-
 
         # Define bounding box around the scratch
         bounding_box = [min(continuous_cc), min(continuous_rr), max(continuous_cc), max(continuous_rr)]
@@ -468,6 +448,7 @@ def inject_defect(image, defect_type):
 
     return img, mask, bounding_box
 
+
 def convert_masks_to_label(masks_lst):
     """
     Convert mask list (image_size, image_size) to label in txt file
@@ -533,7 +514,7 @@ def create_pairs(clean_images, task, num_images=500):
 
         # Decide the number of defects
         defect_count = \
-            random.choices(list(defect_probabilities.keys()), weights=list(defect_probabilities.values()), k=1)[0]
+            random.choices(list(DETECT_PROBABILITIES.keys()), weights=list(DETECT_PROBABILITIES.values()), k=1)[0]
 
         # Generate inspected image
         inspected_image = clean_image.copy()
@@ -592,7 +573,7 @@ def create_pairs(clean_images, task, num_images=500):
                 for bbox in bounding_boxes:
                     f.write(" ".join(map(str, bbox)) + "\n")
 
-        elif task in ["segmentation","old_fashioned"]:
+        elif task in ["segmentation", "old_fashioned"]:
             labels_from_mask = convert_masks_to_label(defect_mask_lst)
             with open(label_path, "w") as f:
                 for label, points in labels_from_mask:
@@ -653,17 +634,17 @@ def create_pairs(clean_images, task, num_images=500):
 
 
 if __name__ == "__main__":
-    # task
-    task = "old_fashioned"  # detection or segmentation
-
-    # Output directory
-    OUTPUT_DIR = f"synthetic_dataset_{task}"
-
-    # Load clean chip images
+    # PARAMETERS
+    TASK = "segmentation"  # ['detection', 'segmentation', 'old_fashioned']
+    OUTPUT_DIR = f"synthetic_dataset_{TASK}"
+    NUM_IMAGES = 5000  # Number of images to generate per clean chip
+    IMAGE_SIZE = (640, 640)  # Resize images to a standard size
+    DETECT_PROBABILITIES = {0: 0.20, 1: 0.40, 2: 0.25, 3: 0.15}
     clean_image_paths = ["data/defective_examples/case1_reference_image.tif",
                          "data/defective_examples/case2_reference_image.tif",
                          "data/non_defective_examples/case3_reference_image.tif"]
+
     clean_images = [cv2.imread(p) for p in clean_image_paths]
 
     # Create synthetic dataset
-    create_pairs(clean_images, task, num_images=NUM_IMAGES)
+    create_pairs(clean_images, TASK, num_images=NUM_IMAGES)
