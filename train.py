@@ -13,11 +13,16 @@ def train_yolo(model_name, data_path):
         workers=4,               # Number of data loading workers
         optimizer='AdamW',         # Optimizer (SGD or Adam)
         lr0=0.01,                # Learning rate
-        patience=50              # Early stopping patience
+        patience=50,              # Early stopping patience
+        amp=True,               # Enable Automatic Mixed Precision (AMP)
+        save=True,              # Save the model during training
+        save_period=-1,         # Save every epoch (or you can set a custom period)
+        plots=True,             # Plot training progress
+        verbose=True            # Display verbose output
     )
 
 if __name__ == "__main__":
-    model_name = 'yolov5s.pt'  # 'yolov5s.pt' or 'yolov8s-seg.pt'
-    data_path = "/sise/home/oryanyeh/muze.ai/synthetic_dataset/data.yaml"
+    model_name = 'yolov8s-seg.pt'  # 'yolov5s.pt' or 'yolov8s-seg.pt'
+    data_path = "/sise/home/oryanyeh/muze.ai/synthetic_dataset_segmentation/data.yaml"
 
     train_yolo(model_name, data_path)

@@ -40,7 +40,7 @@ def preprocess_images(ref_image, insp_image):
     return combined_image
 
 
-def augment_image(image, image_type='reference'):
+def augment_image(image, task, image_type='reference'):
     """Apply random augmentations to the image."""
     h, w = image.shape[:2]
 
@@ -53,12 +53,20 @@ def augment_image(image, image_type='reference'):
         zoom_factor = random.uniform(1.0, 1.3)
 
     elif image_type == 'inspected':
-        flip_prob = 0
-        angle = random.randint(-3, 3)
-        shift_x = random.randint(-int(0.10 * w), int(0.10 * w))
-        shift_y = random.randint(-int(0.10 * h), int(0.10 * h))
-        center_x, center_y = w // 2 + shift_x, h // 2 + shift_y
-        zoom_factor = random.uniform(1.0, 1.10)
+        if task != "old_fashioned":
+            flip_prob = 0
+            angle = random.randint(-3, 3)
+            shift_x = random.randint(-int(0.10 * w), int(0.10 * w))
+            shift_y = random.randint(-int(0.10 * h), int(0.10 * h))
+            center_x, center_y = w // 2 + shift_x, h // 2 + shift_y
+            zoom_factor = random.uniform(1.0, 1.10)
+        else:
+            flip_prob = 0
+            angle = random.randint(-1, 1)
+            shift_x = random.randint(-int(0.05 * w), int(0.05 * w))
+            shift_y = random.randint(-int(0.05 * h), int(0.05 * h))
+            center_x, center_y = w // 2 + shift_x, h // 2 + shift_y
+            zoom_factor = random.uniform(1.0, 1.0)
 
     else:
         raise ValueError("Invalid image type! Choose 'reference' or 'inspected'.")
@@ -497,8 +505,10 @@ def convert_masks_to_label(masks_lst):
 
 def create_pairs(clean_images, task, num_images=500):
     """Create synthetic dataset pairs."""
-    # os.makedirs(f"{OUTPUT_DIR}/images/reference", exist_ok=True)
-    # os.makedirs(f"{OUTPUT_DIR}/images/inspected", exist_ok=True)
+    if task == "old_fashioned":
+        os.makedirs(f"{OUTPUT_DIR}/images/reference", exist_ok=True)
+        os.makedirs(f"{OUTPUT_DIR}/images/inspected", exist_ok=True)
+
     os.makedirs(f"{OUTPUT_DIR}/images/annotated", exist_ok=True)
     os.makedirs(f"{OUTPUT_DIR}/images/annotated_mask", exist_ok=True)
 
@@ -519,7 +529,7 @@ def create_pairs(clean_images, task, num_images=500):
         clean_image = cv2.resize(clean_image, IMAGE_SIZE)
 
         # Augment reference image
-        clean_image = augment_image(clean_image)
+        clean_image = augment_image(clean_image, task)
 
         # Decide the number of defects
         defect_count = \
@@ -529,7 +539,7 @@ def create_pairs(clean_images, task, num_images=500):
         inspected_image = clean_image.copy()
 
         # augment inspected image
-        inspected_image = augment_image(inspected_image, image_type='inspected')
+        inspected_image = augment_image(inspected_image, image_type='inspected', task=task)
 
         bounding_boxes = []
         mask = np.zeros_like(inspected_image[:, :, 0])
@@ -555,13 +565,14 @@ def create_pairs(clean_images, task, num_images=500):
         clean_image = cv2.resize(clean_image, IMAGE_SIZE)
         inspected_image = cv2.resize(inspected_image, IMAGE_SIZE)
 
-        # Save reference image
-        # ref_path = f"{OUTPUT_DIR}/images/reference/ref_{i:04d}.png"
-        # cv2.imwrite(ref_path, clean_image)
+        if task == "old_fashioned":
+            # Save reference image
+            ref_path = f"{OUTPUT_DIR}/images/reference/ref_{i:04d}.png"
+            cv2.imwrite(ref_path, clean_image)
 
-        # Save inspected image
-        # insp_path = f"{OUTPUT_DIR}/images/inspected/insp_{i:04d}.png"
-        # cv2.imwrite(insp_path, inspected_image)
+            # Save inspected image
+            insp_path = f"{OUTPUT_DIR}/images/inspected/insp_{i:04d}.png"
+            cv2.imwrite(insp_path, inspected_image)
 
         # train or val or test
         train_or_val_or_test = 'train' if random.random() < 0.7 else 'val' if random.random() < 0.5 else 'test'
@@ -581,7 +592,7 @@ def create_pairs(clean_images, task, num_images=500):
                 for bbox in bounding_boxes:
                     f.write(" ".join(map(str, bbox)) + "\n")
 
-        elif task == "segmentation":
+        elif task in ["segmentation","old_fashioned"]:
             labels_from_mask = convert_masks_to_label(defect_mask_lst)
             with open(label_path, "w") as f:
                 for label, points in labels_from_mask:
@@ -643,7 +654,7 @@ def create_pairs(clean_images, task, num_images=500):
 
 if __name__ == "__main__":
     # task
-    task = "segmentation"  # detection or segmentation
+    task = "old_fashioned"  # detection or segmentation
 
     # Output directory
     OUTPUT_DIR = f"synthetic_dataset_{task}"

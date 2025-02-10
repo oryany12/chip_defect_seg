@@ -1,132 +1,207 @@
 import cv2
+import matplotlib.pyplot as plt
 import numpy as np
-import random
-from skimage.metrics import structural_similarity as ssim
 
 
-def align_images_shift(img1, img2, roi_x, roi_y, roi_size):
-    """Align img2 to img1 by finding the optimal translation (up, down, left, right) to match the images in a given region of interest (ROI)."""
-    # Step 1: Define the region of interest (ROI) around the given coordinates and size
-    h, w = img1.shape[:2]
-    x_min = max(0, roi_x - roi_size)
-    x_max = min(w, roi_x + roi_size)
-    y_min = max(0, roi_y - roi_size)
-    y_max = min(h, roi_y + roi_size)
+# Function to load and preprocess images
+def load_and_preprocess_images(img1, img2):
+    # Load images if its paths:
+    if isinstance(image1_path, str):
+        img1 = cv2.imread(image1_path)
+    if isinstance(image2_path, str):
+        img2 = cv2.imread(image2_path)
 
-    # Step 2: Extract ROI from both images
-    gray1_roi = cv2.cvtColor(img1[y_min:y_max, x_min:x_max], cv2.COLOR_BGR2GRAY)
-    gray2_roi = cv2.cvtColor(img2[y_min:y_max, x_min:x_max], cv2.COLOR_BGR2GRAY)
+    # Resize image2 to match the dimensions of image1
+    img2 = cv2.resize(img2, (img1.shape[1], img1.shape[0]))
 
-    # Step 3: Detect ORB features in the cropped region of interest
+    # Resize images to the same size
+    img1 = cv2.resize(img1, (640, 640))
+    img2 = cv2.resize(img2, (640, 640))
+
+    # Convert to grayscale
+    gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
+    gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
+
+    # Apply histogram equalization
+    # gray1 = cv2.equalizeHist(gray1)
+    # gray2 = cv2.equalizeHist(gray2)
+
+    # Apply Gaussian blur
+    # gray1 = cv2.GaussianBlur(gray1, (5, 5), 0)
+    # gray2 = cv2.GaussianBlur(gray2, (5, 5), 0)
+
+    return gray1, gray2, img1, img2
+
+
+# Function to align two images using ORB and Affine transformation
+def align_images(img1, img2, distance_threshold=40, transformation_type='affine'):
+    # Initialize ORB detector
     orb = cv2.ORB_create(nfeatures=1000)
-    kp1, des1 = orb.detectAndCompute(gray1_roi, None)
-    kp2, des2 = orb.detectAndCompute(gray2_roi, None)
 
-    # Step 4: Match features using Brute-Force Matcher with Hamming distance
+    # Detect keypoints and descriptors in both images
+    kp1, des1 = orb.detectAndCompute(img1, None)
+    kp2, des2 = orb.detectAndCompute(img2, None)
+
+    # Use BFMatcher to find the best matches between the two images
     bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
     matches = bf.match(des1, des2)
 
-    # Step 5: Sort matches by distance (good matches first)
+    # Sort the matches based on distance
     matches = sorted(matches, key=lambda x: x.distance)
 
-    # Step 6: Extract matched keypoints
-    src_pts = np.float32([kp1[m.queryIdx].pt for m in matches]).reshape(-1, 1, 2)
-    dst_pts = np.float32([kp2[m.trainIdx].pt for m in matches]).reshape(-1, 1, 2)
+    # Filter out matches based on the distance threshold
+    good_matches = []
+    for match in matches:
+        kp1_coords = kp1[match.queryIdx].pt
+        kp2_coords = kp2[match.trainIdx].pt
+        distance = np.linalg.norm(np.array(kp1_coords) - np.array(kp2_coords))  # Euclidean distance
+        if distance < distance_threshold:
+            good_matches.append(match)
 
-    # Step 7: Find the translation vector (shift) using the matched keypoints
-    translation = np.mean(dst_pts - src_pts, axis=0)
-    shift_x, shift_y = translation[0][0], translation[0][1]
+    # Extract the filtered matched keypoints
+    pts1 = np.float32([kp1[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
+    pts2 = np.float32([kp2[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
 
-    # Step 8: Apply the translation to shift the inspected image
-    rows, cols = img2.shape[:2]
-    M = np.float32([[1, 0, shift_x], [0, 1, shift_y]])
-    aligned_img2 = cv2.warpAffine(img2, M, (cols, rows))
+    # Apply the selected transformation
+    if transformation_type == 'affine':
+        # Find the Affine transformation matrix using the good matches
+        M, mask = cv2.estimateAffine2D(pts2, pts1)  # Using Affine transformation
+    elif transformation_type == 'euclidean':
+        # Find the Euclidean transformation matrix using the good matches
+        M, mask = cv2.estimateAffine2D(pts2, pts1, method=cv2.RANSAC,
+                                       ransacReprojThreshold=3.0)  # Euclidean (translation + rotation)
+    else:
+        raise ValueError("Invalid transformation_type. Choose either 'affine' or 'euclidean'.")
 
-    return aligned_img2, matches, x_min, y_min, x_max, y_max
+    # Warp img2 to align with img1 using the transformation matrix
+    height, width = img1.shape
+    aligned_img2 = cv2.warpAffine(img2, M, (width, height))
 
+    # Draw the good matches
+    match_img = cv2.drawMatches(img1, kp1, img2, kp2, good_matches[:20], None,
+                                flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
 
-def evaluate_alignment(reference_img, inspected_img, search_area_size=100, num_tries=10):
-    """Try multiple alignments and choose the one with the smallest difference using SSIM."""
-    best_alignment = None
-    best_score = -1  # SSIM score ranges from -1 to 1, so we start with a low value
-
-    for _ in range(num_tries):
-        # Randomly select a center for the ROI within the image bounds
-        h, w = reference_img.shape[:2]
-        roi_x = random.randint(0, w)
-        roi_y = random.randint(0, h)
-
-        # Align the images using this region of interest
-        aligned_img, matches, x_min, y_min, x_max, y_max = align_images_shift(reference_img, inspected_img, roi_x,
-                                                                              roi_y, search_area_size)
-
-        # Crop both the reference and aligned images to the overlapping region
-        cropped_ref = reference_img[y_min:y_max, x_min:x_max]
-        cropped_aligned = aligned_img[y_min:y_max, x_min:x_max]
-
-        # Calculate similarity using SSIM (Structural Similarity Index)
-        score, _ = ssim(cropped_ref, cropped_aligned, full=True, win_size=3)
-
-        # If this alignment has the best SSIM score, update best alignment
-        if score > best_score:
-            best_score = score
-            best_alignment = aligned_img
-
-    return best_alignment, best_score
+    return M, good_matches, match_img
 
 
-def detect_defects(reference_img, inspected_img, threshold=50):
-    """Detect defects by comparing the reference image and inspected image."""
+def get_bounding_box_for_crop(img1, img2, M):
     # Convert images to grayscale
-    ref_gray = cv2.cvtColor(reference_img, cv2.COLOR_BGR2GRAY)
-    insp_gray = cv2.cvtColor(inspected_img, cv2.COLOR_BGR2GRAY)
+    if len(img1.shape) == 3:
+        img1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
+    if len(img2.shape) == 3:
+        img2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
 
-    # Find absolute difference between the images
-    diff = cv2.absdiff(ref_gray, insp_gray)
+    # create a same size image with one's
+    mask = np.ones_like(img1, dtype=np.uint8) * 255
 
-    # Threshold the difference to detect defects
-    _, mask = cv2.threshold(diff, threshold, 255, cv2.THRESH_BINARY)
+    # apply the transformation to the mask
+    mask = cv2.warpAffine(mask, M, (img1.shape[1], img1.shape[0]))
 
-    return mask
+    # Find contours of the combined mask (non-zero regions)
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    # Find the bounding box of the combined mask (non-zero region)
+    x, y, w, h = cv2.boundingRect(contours[0])
+
+    return x, y, w, h
 
 
-def display_images_with_mask(reference_img, inspected_img, mask_img):
-    """Display the reference, inspected images along with the defect mask."""
-    # Resize images for display purposes
-    reference_img_resized = cv2.resize(reference_img, (0, 0), fx=0.75, fy=0.75)
-    inspected_img_resized = cv2.resize(inspected_img, (0, 0), fx=0.75, fy=0.75)
-    mask_img_resized = cv2.resize(mask_img, (0, 0), fx=0.75, fy=0.75)
+def display_images_side_by_side(img1, img2):
+    fig, ax = plt.subplots(1, 2, figsize=(12, 6))
+    ax[0].imshow(img1, cmap='gray')
+    ax[0].set_title('Reference Image')
+    ax[0].axis('off')
+    ax[1].imshow(img2, cmap='gray')
+    ax[1].set_title('Aligned Image')
+    ax[1].axis('off')
+    plt.show()
 
-    # Convert the mask to a 3-channel image (to match reference and inspected images)
-    mask_img_resized_3d = cv2.cvtColor(mask_img_resized, cv2.COLOR_GRAY2BGR)
 
-    # Stack the images side by side
-    stacked_img = np.hstack((reference_img_resized, inspected_img_resized, mask_img_resized_3d))
+def display_matches(match_img):
+    plt.figure(figsize=(12, 6))
+    plt.imshow(match_img)
+    plt.title("Keypoint Matches")
+    plt.axis('off')
+    plt.show()
 
-    # Display the images
-    cv2.imshow("Reference | Inspected | Defect Mask", stacked_img)
+
+def find_best_aligment(img1, img2):
+    transformation_types = ['affine', 'euclidean']
+    kp_distance_thresholds = [40, 50, 60, 70, 80, 90, 100]
+    best_similarity = 0
+    best_M = None
+    best_cropped_images = None
+
+    gray1, gray2, img1, img2 = load_and_preprocess_images(img1, img2)
+
+    for transformation_type in transformation_types:
+        for distance_threshold in kp_distance_thresholds:
+            M, _, _ = align_images(gray1, gray2, distance_threshold, transformation_type)
+            aligned_gray2 = cv2.warpAffine(gray2, M, gray1.shape[:2])
+            x, y, w, h = get_bounding_box_for_crop(gray1, aligned_gray2, M)
+            little_more = 10
+            cropped_gray1 = gray1[y + little_more:y + h - little_more, x + little_more:x + w - little_more]
+            cropped_aligned_gray2 = aligned_gray2[y + little_more:y + h - little_more,
+                                    x + little_more:x + w - little_more]
+
+            # Calculate the similarity between the cropped images
+            similarity = cv2.matchTemplate(cropped_gray1, cropped_aligned_gray2, cv2.TM_CCOEFF_NORMED)[0][0]
+            if similarity > best_similarity:
+                best_similarity = similarity
+                best_M = M
+
+                aligned_img2 = cv2.warpAffine(img2, M, img1.shape[:2])
+                cropped_img1 = img1[y + little_more:y + h - little_more, x + little_more:x + w - little_more]
+                cropped_aligned_img2 = aligned_img2[y + little_more:y + h - little_more,
+                                       x + little_more:x + w - little_more]
+                best_cropped_images = (cropped_img1, cropped_aligned_img2)
+
+    print(f"Best similarity: {best_similarity}")
+    return best_cropped_images
 
 
 if __name__ == "__main__":
-    # Load the reference and inspected images (replace with your own paths)
-    reference_apth = "data/defective_examples/case2_reference_image.tif"
-    inspected_apth = "data/defective_examples/case2_inspected_image.tif"
+    # Example usage
+    # image1_path = "data/defective_examples/case2_reference_image.tif"
+    # image2_path = "data/defective_examples/case2_inspected_image.tif"
 
-    # Load images
-    reference_img = cv2.imread(reference_apth)
-    inspected_img = cv2.imread(inspected_apth)
+    # image1_path = "data/defective_examples/case1_reference_image.tif"
+    # image2_path = "data/defective_examples/case1_inspected_image.tif"
 
-    # Evaluate multiple alignments and choose the one with the best SSIM score
-    best_aligned_img, best_score = evaluate_alignment(reference_img, inspected_img, search_area_size=100, num_tries=10)
+    image1_path = "synthetic_dataset/insp_0001.png"
+    image2_path = "synthetic_dataset/ref_0001.png"
 
-    print(f"Best SSIM Score: {best_score}")
+    # # Load and preprocess images
+    # gray1, gray2, img1, img2 = load_and_preprocess_images(image1_path, image2_path)
+    #
+    # # Align the images using Euclidean transformation
+    # transformation_type = 'affine'  # Choose either 'affine' or 'euclidean'
+    # M, good_matches, match_img = align_images(gray1, gray2, transformation_type=transformation_type)
+    #
+    # # Apply the Euclidean transformation to the original image
+    # aligned_img2 = cv2.warpAffine(img2, M, img1.shape[:2])
+    #
+    # # Get the bounding box for cropping the aligned image
+    # x, y, w, h = get_bounding_box_for_crop(img1, aligned_img2, M)
+    # little_more = 10
+    #
+    # # Crop the both images
+    # cropped_img1 = img1[y+little_more:y+h-little_more, x+little_more:x+w-little_more]
+    # cropped_aligned_img2 = aligned_img2[y+little_more:y+h-little_more, x+little_more:x+w-little_more]
+    #
+    # # Display gray images side by side
+    # aligned_gray2 = cv2.warpAffine(gray2, M, gray1.shape[:2])
+    # display_images_side_by_side(gray1, aligned_gray2)
+    #
+    # # Display the keypoint matches
+    # display_matches(match_img)
+    #
+    # # Display images side by side
+    # display_images_side_by_side(img1, aligned_img2)
+    #
+    # # Display the cropped images side by side
+    # display_images_side_by_side(cropped_img1, cropped_aligned_img2)
 
-    # Detect defects in the best alignment
-    defect_mask = detect_defects(reference_img, best_aligned_img, threshold=50)
-
-    # Display the results with the defect mask
-    display_images_with_mask(reference_img, best_aligned_img, defect_mask)
-
-    # Wait until the user closes the window
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+    cropped_img1, cropped_aligned_img2 = find_best_aligment(image1_path, image2_path)
+    # Display the cropped images side by side
+    display_images_side_by_side(cropped_img1, cropped_aligned_img2)
