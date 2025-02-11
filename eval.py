@@ -5,7 +5,9 @@ import os
 from create_data import *
 from tqdm import tqdm
 from PIL import Image
+import torch
 
+IMAGE_SIZE = (640, 640)
 def evaluate_yolov5(model, ref_image_path, ins_image_path=None, save_dir="results/"):
 
     # load the images
@@ -27,9 +29,24 @@ def evaluate_yolov5(model, ref_image_path, ins_image_path=None, save_dir="result
     # Save the result image with bounding boxes drawn on it
     if ins_image_path is None:
         output_path = os.path.join(save_dir, os.path.basename(ref_image_path))
+        output_path_mask = os.path.join(save_dir, "binary_mask_" + os.path.basename(ref_image_path))
+
     else:
         output_path = os.path.join(save_dir, os.path.basename(ins_image_path))
+        output_path_mask = os.path.join(save_dir, "binary_mask_" + os.path.basename(ins_image_path))
+
     results[0].save(output_path)  # Save the result to the specified path
+
+    if results[0].masks:
+        mask = torch.max(results[0].masks.data, dim=0)[0]
+    else: # crate mask wof 640x640
+        mask = torch.zeros(results[0].orig_img.shape[:2])
+    # Convert the binary mask tensor to a NumPy array
+    mask = mask.cpu().numpy()
+
+    # Save the result as a PNG image
+    image = Image.fromarray((mask * 255).astype(np.uint8))  # Convert 0/1 to 0/255
+    image.save(output_path_mask)
 
 
 if __name__ == "__main__":
@@ -40,6 +57,12 @@ if __name__ == "__main__":
         # ("data/other_dataset_exmple_reference.png", "data/other_dataset_exmple_inspected_1.png"),
         # ("data/other_dataset_exmple_reference.png", "data/other_dataset_exmple_inspected_2.png")
         ]
+
+    pairs_image_out_paths = [("data/out_of_distrbution_data/1_ref.jpg", "data/out_of_distrbution_data/1_ins.jpg"),
+                             ("data/out_of_distrbution_data/2_ins.jpg", "data/out_of_distrbution_data/2_ref.jpg"),
+                             ("data/out_of_distrbution_data/3_1_ins.jpg", "data/out_of_distrbution_data/3_ref.jpg"),
+                             ("data/out_of_distrbution_data/3_2_ins.jpg", "data/out_of_distrbution_data/3_ref.jpg"),
+                             ]
 
     # samples from training data
     images_paths = [
@@ -53,9 +76,9 @@ if __name__ == "__main__":
     os.makedirs(save_dir, exist_ok=True)  # Create the directory if it doesn't exist
 
     # Load the trained model
-    # model_weights = "/sise/home/oryanyeh/muze.ai/runs/detect/train7/weights/best.pt"
-    model_weights = "/sise/home/oryanyeh/muze.ai/runs/segment/train6/weights/best.pt"
-    model = YOLO(model_weights)  # Use your trained model's weight file (best.pt)
+    # model_weights = "weights/yolo5s_detect.pt"
+    model_weights = "weights/yolo8s_seg.pt"
+    model = YOLO(model_weights)  # Use your trained model's weight file (yolo5s_detect.pt)
 
     for reference_image_path, inspected_image_path in tqdm(pairs_image_paths):
 
