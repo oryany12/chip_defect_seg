@@ -1,6 +1,5 @@
 # directories
 synthetic_dataset/*
-data/*
 .idea/*
 results/*
 
