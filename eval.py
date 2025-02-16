@@ -8,7 +8,7 @@ from PIL import Image
 import torch
 
 IMAGE_SIZE = (640, 640)
-def evaluate_yolov5(model, ref_image_path, ins_image_path=None, save_dir="results/"):
+def evaluate_yolov5(model, ref_image_path, ins_image_path=None, save_dir="results/", save_combined=False):
 
     # load the images
     ref_image = cv2.imread(ref_image_path)
@@ -22,6 +22,11 @@ def evaluate_yolov5(model, ref_image_path, ins_image_path=None, save_dir="result
         combined_image = preprocess_images(ref_image, ins_image)
     else:
         combined_image = ref_image
+
+    if save_combined:
+        save_comb_path = os.path.join(save_dir, "comb_" + os.path.basename(ins_image_path))
+        combined_image_to_save = Image.fromarray(combined_image)
+        combined_image_to_save.save(save_comb_path)
 
     # Run inference on the single image
     results = model.predict(combined_image)
