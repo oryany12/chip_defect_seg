@@ -71,11 +71,11 @@ if __name__ == "__main__":
 
     # samples from training data
     images_paths = [
-        ("synthetic_dataset/images/test/image_0.png", None), # 4
-        ("synthetic_dataset/images/test/image_100.png", None), # 1
-        ("synthetic_dataset/images/test/image_1005.png", None),  # 0
-        ("synthetic_dataset/images/test/image_1046.png", None),  # 3
-        ("synthetic_dataset/images/test/image_1047.png", None) # 2
+        ('synthetic_dataset/images/test/image_0.png', None), # 4
+        ('synthetic_dataset/images/test/image_100.png', None), # 1
+        ('synthetic_dataset/images/test/image_1005.png', None),  # 0
+        ('synthetic_dataset/images/test/image_1046.png', None),  # 3
+        ('synthetic_dataset/images/test/image_1047.png', None) # 2
     ]
     save_dir = "results"
     os.makedirs(save_dir, exist_ok=True)  # Create the directory if it doesn't exist
