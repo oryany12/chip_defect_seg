@@ -10,4 +10,4 @@ torchvision==0.21.0+cu118
 tqdm==4.67.1
 # transformers==4.48.2
 ultralytics==8.3.70
-Pillow==11.1.0
+Pillow==12.1.1
